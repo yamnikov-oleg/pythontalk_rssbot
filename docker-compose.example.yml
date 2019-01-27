@@ -1,0 +1,13 @@
+version: '3'
+services:
+  rssbot:
+    build: .
+    volumes:
+      - ./local_settings.py:/app/local_settings.py:ro
+    restart: always
+  redis:
+    image: redis:4-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - ./redis-data:/data:rw
+    restart: always
