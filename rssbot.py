@@ -164,7 +164,7 @@ class RssBot:
                 self.update()
                 self.storage.set_last_post_time()
 
-            time.sleep((self.update_every / 10).total_seconds())
+            time.sleep((self.update_every / 50).total_seconds())
 
     def clear(self) -> None:
         """
