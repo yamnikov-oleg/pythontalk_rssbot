@@ -18,7 +18,7 @@ HEADERS = [
     "How's the weather today? Good enough for a walk? New on {}:",
     "Pause, take a deep breath. Let your shoulders drop. New on {}:",
     "Have you been drinking enough water? New on {}:",
-    "Are sleeping enough? Don't deny yourself a quality rest. New on {}:",
+    "Are you getting enough sleep? Don't deny yourself a quality rest. New on {}:",
     "It's never a bad time to listen to your favorite music. New on {}:",
     "Put a smile on that pretty face! New on {}:",
     "Don't be too hard on yourself. One small step at a time. New on {}:",
