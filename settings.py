@@ -24,6 +24,8 @@ HEADERS = [
     "Don't be too hard on yourself. One small step at a time. New on {}:",
     "A good meal can make one's day. New on {}:",
     "There are no bad days without good days coming after. New on {}:",
+    "It will get easier. New on {}:",
+    "One choice doesn’t determine your whole future. New on {}:",
 ]
 
 UPDATE_EVERY = timedelta(hours=8)
