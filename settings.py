@@ -12,20 +12,23 @@ BOT_TOKEN = ''
 BOT_PROXY = ''
 CHAT_ID = ''
 HEADERS = [
-    "Take a break, you earned it. New on {}:",
-    "You look stunning today. New on {}:",
-    "Do you like sweets? Treat yourself with a dessert today. New on {}:",
-    "How's the weather today? Good enough for a walk? New on {}:",
-    "Pause, take a deep breath. Let your shoulders drop. New on {}:",
-    "Have you been drinking enough water? New on {}:",
-    "Are you getting enough sleep? Don't deny yourself a quality rest. New on {}:",
-    "It's never a bad time to listen to your favorite music. New on {}:",
-    "Put a smile on that pretty face! New on {}:",
-    "Don't be too hard on yourself. One small step at a time. New on {}:",
-    "A good meal can make one's day. New on {}:",
-    "There are no bad days without good days coming after. New on {}:",
-    "It will get easier. New on {}:",
-    "One choice doesn’t determine your whole future. New on {}:",
+    "Nobody expects the Spanish Inquisition! New on {}:",
+    "Anybody else feel like a little giggle when I mention my fwiend... Biggus... Dickus? New on {}:",
+    "He who is valiant and pure of spirit may find the Holy Grail in the Castle of aaarrrrggh. New on {}:",
+    "Now, you listen here! He's not the Messiah. He's a very naughty boy! New on {}:",
+    "Look, you stupid Bastard. You've got no arms left. - It’s just a flesh wound. New on {}:",
+    "Please, this is supposed to be a happy occasion. Let’s not bicker and argue over who killed who. New on {}:",
+    "I'm not the Messiah! Will you please listen? -- He is the Messiah! New on {}:",
+    "Spam! Spam! Spam! Spam! Spam! Spam! New on {}:",
+    "Apart from the sanitation, the medicine, education, wine, public order, irrigation, roads, the fresh water system, and public health... What have the Romans ever done for us? New on {}:",
+    "Always look on the bright side of life. New on {}:",
+    "And now for something completely different. New on {}:",
+    "We interrupt this program to annoy you and make things generally more irritating. New on {}:",
+    "He’s not the Messiah—he’s a very naughty boy! New on {}:",
+    "It’s passed on! This parrot is no more! It has ceased to be! New on {}:",
+    "It’s... {}:",
+    "Are you suggesting that coconuts migrate? New on {}:",
+    "We are the Knights who say... NI. New on {}:",
 ]
 
 UPDATE_EVERY = timedelta(hours=8)
