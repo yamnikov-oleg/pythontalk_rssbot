@@ -5,3 +5,5 @@ local_settings.py
 venv/
 .gitignore
 __pycache__
+fabfile.py
+redis-data/
