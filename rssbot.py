@@ -87,7 +87,6 @@ class RssBot:
 
         self.feed_title = settings.FEED_TITLE
         self.feed_url = settings.FEED_URL
-        self.entries_per_post = settings.ENTRIES_PER_POST
 
         if settings.BOT_PROXY:
             req = Request(proxy_url=settings.BOT_PROXY)
@@ -96,7 +95,6 @@ class RssBot:
             self.bot = Bot(settings.BOT_TOKEN)
 
         self.chat_id = settings.CHAT_ID
-        self.headers = settings.HEADERS
 
         self.update_every = settings.UPDATE_EVERY
 
@@ -119,8 +117,6 @@ class RssBot:
                 continue
 
             entries_collected.append((title, url))
-            if len(entries_collected) >= self.entries_per_post:
-                break
 
         logging.info(f'Collected {len(entries_collected)} entries to post')
 
@@ -128,25 +124,20 @@ class RssBot:
         if len(entries_collected) == 0:
             return
 
-        # Format and send the message
-        header = random.choice(self.headers).format(self.feed_title)
-        entries_formatted = []  # List[str]
-        for title, url in entries_collected:
-            entries_formatted.append(
-                f"→ <a href=\"{url}\">{escape_html(title)}</a>")
+        selected_title, selected_url = entries_collected[0]
+        logging.info(f'Posting entry: {selected_url}')
 
-        message = "\n".join([header, *entries_formatted])
+        # Format and send the message
+        message = f"<a href=\"{selected_url}\">{escape_html(selected_title)}</a>"
         self.bot.send_message(
             chat_id=self.chat_id,
             text=message,
             parse_mode="HTML",
-            disable_web_page_preview=True,
         )
 
         # Mark sent entries as posted
-        logging.info(f'Message sent, marking entries as posted')
-        for _, url in entries_collected:
-            self.storage.set_posted(url)
+        logging.info(f'Message sent, marking the entry as posted')
+        self.storage.set_posted(selected_url)
 
     def run(self) -> None:
         logging.info("Starting RSS bot")
