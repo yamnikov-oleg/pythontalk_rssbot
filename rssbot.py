@@ -98,6 +98,16 @@ class RssBot:
 
         self.update_every = settings.UPDATE_EVERY
 
+        self.blacklist_words = settings.BLACKLIST_WORDS
+
+    def contains_blacklisted_words(self, title):
+        title_lower = title.lower()
+        for word in self.blacklist_words:
+            if word.lower() in title_lower:
+                return True
+
+        return False
+
     def update(self):
         """
         Parses the feed and posts new links in the group.
@@ -114,6 +124,10 @@ class RssBot:
         for entry in feed["entries"]:
             title, url = entry["title"], entry["link"]
             if self.storage.was_posted_before(url):
+                continue
+
+            if self.contains_blacklisted_words(title):
+                logging.info("Title \"%s\" contains blacklisted words, skipping", title)
                 continue
 
             entries_collected.append((title, url))
