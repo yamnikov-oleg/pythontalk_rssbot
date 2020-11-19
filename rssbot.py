@@ -76,6 +76,13 @@ class Storage:
         dt_formatted = now.isoformat()
         self.rdb.set(key, dt_formatted)
 
+    def clear_last_post_time(self) -> None:
+        """
+        Sets datetime of last message to current time.
+        """
+        key = "pythontalk_rssbot_lastposttime"
+        self.rdb.delete(key)
+
 
 class RssBot:
     def __init__(self):
@@ -176,6 +183,7 @@ class RssBot:
         Removes all info about posted entries from the storage.
         """
         removed = self.storage.clear_posted()
+        self.storage.clear_last_post_time()
         logging.info(f"Removed {removed} entries")
 
 
