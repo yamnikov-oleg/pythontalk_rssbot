@@ -106,11 +106,19 @@ class RssBot:
         self.update_every = settings.UPDATE_EVERY
 
         self.blacklist_words = settings.BLACKLIST_WORDS
+        self.blacklist_urls = settings.BLACKLIST_URLS
 
     def contains_blacklisted_words(self, title):
         title_lower = title.lower()
         for word in self.blacklist_words:
             if word.lower() in title_lower:
+                return True
+
+        return False
+
+    def is_blacklisted_url(self, url):
+        for blacklisted_url in self.blacklist_urls:
+            if url.startswith(blacklisted_url):
                 return True
 
         return False
@@ -135,6 +143,10 @@ class RssBot:
 
             if self.contains_blacklisted_words(title):
                 logging.info("Title \"%s\" contains blacklisted words, skipping", title)
+                continue
+
+            if self.is_blacklisted_url(url):
+                logging.info("URL \"%s\" is blacklisted, skipping", url)
                 continue
 
             entries_collected.append((title, url))
