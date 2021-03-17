@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import logging
-import random
 import sys
 import time
 from datetime import datetime
@@ -9,6 +8,7 @@ from typing import Optional
 import dateutil.parser
 import feedparser
 import redis
+from schedule import Scheduler
 from telegram.bot import Bot
 from telegram.utils.request import Request
 
@@ -103,10 +103,24 @@ class RssBot:
 
         self.chat_id = settings.CHAT_ID
 
-        self.update_every = settings.UPDATE_EVERY
+        self.first_update_at_hour = settings.FIRST_UPDATE_AT_HOUR
+        self.update_every_hours = settings.UPDATE_EVERY_HOURS
 
         self.blacklist_words = settings.BLACKLIST_WORDS
         self.blacklist_urls = settings.BLACKLIST_URLS
+
+        self.scheduler = Scheduler()
+        self._setup_schedule()
+
+    def _setup_schedule(self):
+        logging.info("Setting up RSS bot schedule")
+
+        hour = self.first_update_at_hour
+        while hour < 24:
+            time_str = f"{hour:02}:00"
+            logging.info("Bot will run at %s", time_str)
+            self.scheduler.every().day.at(time_str).do(self.update)
+            hour += self.update_every_hours
 
     def contains_blacklisted_words(self, title):
         title_lower = title.lower()
@@ -135,7 +149,7 @@ class RssBot:
         logging.info(
             f'Received {len(feed["entries"])} entries from {self.feed_url}')
 
-        entries_collected = []  # type: List[Tuple[str, str]]
+        entries_collected = []
         for entry in feed["entries"]:
             title, url = entry["title"], entry["link"]
             if self.storage.was_posted_before(url):
@@ -169,26 +183,14 @@ class RssBot:
         )
 
         # Mark sent entries as posted
-        logging.info(f'Message sent, marking the entry as posted')
+        logging.info('Message sent, marking the entry as posted')
         self.storage.set_posted(selected_url)
 
     def run(self) -> None:
         logging.info("Starting RSS bot")
         while True:
-            last_time = self.storage.get_last_post_time()
-            if last_time:
-                now = datetime.utcnow()
-                delta = now - last_time
-                logging.info(f"Time since last post: {delta}")
-            else:
-                delta = None
-                logging.info(f"Post was never made yet")
-
-            if not delta or delta >= self.update_every:
-                self.update()
-                self.storage.set_last_post_time()
-
-            time.sleep((self.update_every / 50).total_seconds())
+            self.scheduler.run_pending()
+            time.sleep(60)
 
     def clear(self) -> None:
         """

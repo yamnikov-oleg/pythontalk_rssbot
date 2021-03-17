@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 REDIS_HOST = 'redis'
 REDIS_PORT = 6379
 REDIS_DB = 0
@@ -11,7 +9,9 @@ BOT_TOKEN = ''
 BOT_PROXY = ''
 CHAT_ID = ''
 
-UPDATE_EVERY = timedelta(hours=8)
+# Updates will happen at 02:00, 10:00 and 18:00
+FIRST_UPDATE_AT_HOUR = 2
+UPDATE_EVERY_HOURS = 8
 
 # Titles with at least one of these words will be skipped.
 # Each word is searched as a substring case-insensitively.

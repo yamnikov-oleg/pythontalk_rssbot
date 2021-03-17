@@ -9,4 +9,5 @@ PySocks==1.6.8
 python-dateutil==2.7.5
 python-telegram-bot==11.1.0
 redis==3.0.1
+schedule==1.0.0
 six==1.12.0
