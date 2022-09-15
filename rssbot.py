@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
+import hashlib
 import logging
 import sys
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 
 import dateutil.parser
 import feedparser
@@ -25,6 +26,8 @@ def escape_html(s: str) -> str:
 
 
 class Storage:
+    key_prefix = "rssbot"
+
     def __init__(self, host: str, port: int, db: int) -> None:
         self.rdb = redis.Redis(
             host=host,
@@ -32,27 +35,34 @@ class Storage:
             db=db,
         )
 
-    def was_posted_before(self, entry_url: str) -> bool:
+    def _hash_url(self, entry_url: str) -> str:
+        sha = hashlib.sha256()
+        sha.update(entry_url.encode())
+        return sha.hexdigest()
+
+    def set_entry_posted(self, entry_url: str, message_id: Union[int, str]) -> None:
+        key = f"{self.key_prefix}:entry_message_id:{self._hash_url(entry_url)}"
+        self.rdb.set(key, str(message_id))
+
+    def get_entry_message_id(self, entry_url: str) -> Optional[str]:
+        key = f"{self.key_prefix}:entry_message_id:{self._hash_url(entry_url)}"
+        value = self.rdb.get(key)
+        if value is not None:
+            value = value.decode()
+        return value
+
+    def was_entry_posted_before(self, entry_url: str) -> bool:
         """
         Returns True if an entry with given url was posted in the group before.
         Used to deduplicate entries.
         """
-        key = f"pythontalk_rssbot_entry[{entry_url}]"
-        value = self.rdb.get(key)
-        return bool(value)
+        return bool(self.get_entry_message_id(entry_url))
 
-    def set_posted(self, entry_url: str) -> None:
-        """
-        Marks entry with the given url as posted.
-        """
-        key = f"pythontalk_rssbot_entry[{entry_url}]"
-        self.rdb.set(key, b'1')
-
-    def clear_posted(self) -> int:
+    def clear_entry_data(self) -> int:
         """
         Remove all the information about posted entries.
         """
-        keys = self.rdb.keys("pythontalk_rssbot_entry*")
+        keys = self.rdb.keys(f"{self.key_prefix}:entry_message_id:*")
         for key in keys:
             self.rdb.delete(key)
         return len(keys)
@@ -61,7 +71,7 @@ class Storage:
         """
         Gets datetime when last message was sent.
         """
-        key = "pythontalk_rssbot_lastposttime"
+        key = f"{self.key_prefix}:lastposttime"
         dt_formatted = self.rdb.get(key)
         if not dt_formatted:
             return None
@@ -72,7 +82,7 @@ class Storage:
         """
         Sets datetime of last message to current time.
         """
-        key = "pythontalk_rssbot_lastposttime"
+        key = f"{self.key_prefix}:lastposttime"
         now = datetime.utcnow()
         dt_formatted = now.isoformat()
         self.rdb.set(key, dt_formatted)
@@ -81,7 +91,7 @@ class Storage:
         """
         Sets datetime of last message to current time.
         """
-        key = "pythontalk_rssbot_lastposttime"
+        key = f"{self.key_prefix}:lastposttime"
         self.rdb.delete(key)
 
 
@@ -153,7 +163,7 @@ class RssBot:
         entries_collected = []
         for entry in feed["entries"]:
             title, url = entry["title"], entry["link"]
-            if self.storage.was_posted_before(url):
+            if self.storage.was_entry_posted_before(url):
                 continue
 
             if self.contains_blacklisted_words(title):
@@ -176,13 +186,13 @@ class RssBot:
         logging.info(f'Posting entry: {selected_url}')
 
         # Format and send the message
-        message = (
+        text = (
             f"<b>[{self.feed_title}]</b>\n"
             f"<a href=\"{selected_url}\">{escape_html(selected_title)}</a>"
         )
-        self.bot.send_message(
+        message = self.bot.send_message(
             chat_id=self.chat_id,
-            text=message,
+            text=text,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(
                 [
@@ -198,7 +208,7 @@ class RssBot:
 
         # Mark sent entries as posted
         logging.info('Message sent, marking the entry as posted')
-        self.storage.set_posted(selected_url)
+        self.storage.set_entry_posted(selected_url, message.message_id)
 
     def run(self) -> None:
         logging.info("Starting RSS bot")
@@ -210,7 +220,7 @@ class RssBot:
         """
         Removes all info about posted entries from the storage.
         """
-        removed = self.storage.clear_posted()
+        removed = self.storage.clear_entry_data()
         self.storage.clear_last_post_time()
         logging.info(f"Removed {removed} entries")
 
