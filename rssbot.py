@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 import hashlib
+import json
 import logging
 import sys
-import time
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Tuple, Union, cast
 
 import dateutil.parser
 import feedparser
 import redis
 from schedule import Scheduler
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (CallbackQuery, InlineKeyboardButton,
+                      InlineKeyboardMarkup, Update)
 from telegram.bot import Bot
+from telegram.ext import CallbackQueryHandler, Updater
 from telegram.utils.request import Request
 
 import settings
@@ -35,28 +37,116 @@ class Storage:
             db=db,
         )
 
-    def _hash_url(self, entry_url: str) -> str:
+    def _hash_url(self, url: str) -> str:
         sha = hashlib.sha256()
-        sha.update(entry_url.encode())
+        sha.update(url.encode())
         return sha.hexdigest()
 
-    def set_entry_posted(self, entry_url: str, message_id: Union[int, str]) -> None:
-        key = f"{self.key_prefix}:entry_message_id:{self._hash_url(entry_url)}"
-        self.rdb.set(key, str(message_id))
+    def set_entry_posted(self, url: str, message_id: Union[int, str], message_text: str) -> None:
+        entry_data = {
+            "url": url,
+            "message_id": message_id,
+            "message_text": message_text,
+        }
+        entry_data_json = json.dumps(entry_data)
 
-    def get_entry_message_id(self, entry_url: str) -> Optional[str]:
-        key = f"{self.key_prefix}:entry_message_id:{self._hash_url(entry_url)}"
+        entry_url_key = f"{self.key_prefix}:entry_by_url:{self._hash_url(url)}"
+        self.rdb.set(entry_url_key, entry_data_json)
+
+        message_id_key = f"{self.key_prefix}:entry_by_message_id:{message_id}"
+        self.rdb.set(message_id_key, entry_data_json)
+
+    def get_entry_data_by_url(self, url: str) -> Optional[dict]:
+        key = f"{self.key_prefix}:entry_by_url:{self._hash_url(url)}"
         value = self.rdb.get(key)
         if value is not None:
-            value = value.decode()
+            value = json.loads(value)
         return value
 
-    def was_entry_posted_before(self, entry_url: str) -> bool:
+    def get_entry_data_by_message_id(self, message_id: Union[int, str]) -> None:
+        key = f"{self.key_prefix}:entry_by_message_id:{message_id}"
+        value = self.rdb.get(key)
+        if value is not None:
+            value = json.loads(value)
+        return value
+
+    def was_entry_posted_before(self, url: str) -> bool:
         """
         Returns True if an entry with given url was posted in the group before.
         Used to deduplicate entries.
         """
-        return bool(self.get_entry_message_id(entry_url))
+        return bool(self.get_entry_data_by_url(url))
+
+    def update_entry_likes(self, url: str, incr: bool = True) -> None:
+        key = f"{self.key_prefix}:entry_likes:{self._hash_url(url)}"
+        if incr:
+            self.rdb.incr(key)
+        else:
+            self.rdb.decr(key)
+
+    def update_entry_dislikes(self, url: str, incr: bool = True) -> None:
+        key = f"{self.key_prefix}:entry_dislikes:{self._hash_url(url)}"
+        if incr:
+            self.rdb.incr(key)
+        else:
+            self.rdb.decr(key)
+
+    def get_entry_likes_dislikes(self, url: str) -> Tuple[int, int]:
+        likes_key = f"{self.key_prefix}:entry_likes:{self._hash_url(url)}"
+        likes_bytes = self.rdb.get(likes_key)
+        if likes_bytes is None:
+            likes = 0
+        else:
+            likes = int(likes_bytes.decode())
+
+        dislikes_key = f"{self.key_prefix}:entry_dislikes:{self._hash_url(url)}"
+        dislikes_bytes = self.rdb.get(dislikes_key)
+        if dislikes_bytes is None:
+            dislikes = 0
+        else:
+            dislikes = int(dislikes_bytes.decode())
+
+        return likes, dislikes
+
+    def toggle_entry_liked(self, url: str, user_id: Union[str, int]) -> None:
+        """
+        It's important that operations on both keys are atomic.
+        """
+        like_key = f"{self.key_prefix}:entry_user_like:{self._hash_url(url)}:{user_id}"
+        call_count = self.rdb.incr(like_key)
+        is_liked = call_count % 2 == 1
+        self.update_entry_likes(url, incr=is_liked)
+
+        dislike_key = f"{self.key_prefix}:entry_user_dislike:{self._hash_url(url)}:{user_id}"
+        old_value = self.rdb.getset(dislike_key, "0")
+        if old_value is not None:
+            old_value = int(old_value.decode())
+            was_disliked = old_value % 2 == 1
+        else:
+            was_disliked = False
+
+        if was_disliked:
+            self.update_entry_dislikes(url, incr=False)
+
+    def toggle_entry_disliked(self, url: str, user_id: Union[str, int]) -> None:
+        """
+        It's important that operations on both keys are atomic.
+        """
+        dislike_key = f"{self.key_prefix}:entry_user_dislike:{self._hash_url(url)}:{user_id}"
+        call_count = self.rdb.incr(dislike_key)
+        is_disliked = call_count % 2 == 1
+        self.update_entry_dislikes(url, incr=is_disliked)
+
+        like_key = f"{self.key_prefix}:entry_user_like:{self._hash_url(url)}:{user_id}"
+        old_value = self.rdb.getset(like_key, "0")
+        if old_value is not None:
+            old_value = int(old_value.decode())
+            was_liked = old_value % 2 == 1
+        else:
+            was_liked = False
+
+        if was_liked:
+            self.update_entry_likes(url, incr=False)
 
     def clear_entry_data(self) -> int:
         """
@@ -111,6 +201,7 @@ class RssBot:
             self.bot = Bot(settings.BOT_TOKEN, request=req)
         else:
             self.bot = Bot(settings.BOT_TOKEN)
+        self.updater = Updater(bot=self.bot)
 
         self.chat_id = settings.CHAT_ID
 
@@ -202,19 +293,117 @@ class RssBot:
                             url=selected_url,
                         ),
                     ],
+                    [
+                        InlineKeyboardButton(
+                            "👍 0",
+                            callback_data="like",
+                        ),
+                        InlineKeyboardButton(
+                            "👎 0",
+                            callback_data="dislike",
+                        ),
+                    ],
                 ],
             ),
         )
 
         # Mark sent entries as posted
         logging.info('Message sent, marking the entry as posted')
-        self.storage.set_entry_posted(selected_url, message.message_id)
+        self.storage.set_entry_posted(
+            url=selected_url,
+            message_id=message.message_id,
+            message_text=text,
+        )
+
+    def update_entry_message(self, entry_data: dict) -> None:
+        likes, dislikes = self.storage.get_entry_likes_dislikes(entry_data["url"])
+        self.bot.edit_message_reply_markup(
+            chat_id=self.chat_id,
+            message_id=entry_data["message_id"],
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "Открыть",
+                            url=entry_data["url"],
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            f"👍 {likes}",
+                            callback_data="like",
+                        ),
+                        InlineKeyboardButton(
+                            f"👎 {dislikes}",
+                            callback_data="dislike",
+                        ),
+                    ],
+                ],
+            ),
+        )
+
+    def handle_like(self, bot: Bot, update: Update) -> None:
+        update.callback_query.answer()
+
+        query = cast(CallbackQuery, update.callback_query)
+        entry_data = self.storage.get_entry_data_by_message_id(query.message.message_id)
+        if not entry_data:
+            logging.info(
+                'Like query from user \"%s %s\" (id %s) for unknown post (message id %s)',
+                query.from_user.first_name,
+                query.from_user.last_name,
+                query.from_user.id,
+                query.message.message_id,
+            )
+            return
+
+        logging.info(
+            'Like query from user \"%s %s\" (id %s) for post \"%s\" (message id %s)',
+            query.from_user.first_name,
+            query.from_user.last_name,
+            query.from_user.id,
+            entry_data["url"],
+            query.message.message_id,
+        )
+
+        self.storage.toggle_entry_liked(entry_data["url"], query.from_user.id)
+        self.update_entry_message(entry_data)
+
+    def handle_dislike(self, bot: Bot, update: Update) -> None:
+        update.callback_query.answer()
+
+        query = cast(CallbackQuery, update.callback_query)
+        entry_data = self.storage.get_entry_data_by_message_id(query.message.message_id)
+        if not entry_data:
+            logging.info(
+                'Dislike query from user \"%s %s\" (id %s) for unknown post (message id %s)',
+                query.from_user.first_name,
+                query.from_user.last_name,
+                query.from_user.id,
+                query.message.message_id,
+            )
+            return
+
+        logging.info(
+            'Dislike query from user \"%s %s\" (id %s) for post \"%s\" (message id %s)',
+            query.from_user.first_name,
+            query.from_user.last_name,
+            query.from_user.id,
+            entry_data["url"],
+            query.message.message_id,
+        )
+
+        self.storage.toggle_entry_disliked(entry_data["url"], query.from_user.id)
+        self.update_entry_message(entry_data)
 
     def run(self) -> None:
         logging.info("Starting RSS bot")
-        while True:
-            self.scheduler.run_pending()
-            time.sleep(60)
+
+        self.updater.dispatcher.add_handler(CallbackQueryHandler(self.handle_like, pattern="like"))
+        self.updater.dispatcher.add_handler(CallbackQueryHandler(self.handle_dislike, pattern="dislike"))
+        self.updater.job_queue.run_repeating(lambda bot, job: self.scheduler.run_pending(), interval=60)
+        self.updater.start_polling()
+        self.updater.idle()
 
     def clear(self) -> None:
         """
