@@ -9,6 +9,7 @@ import dateutil.parser
 import feedparser
 import redis
 from schedule import Scheduler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.bot import Bot
 from telegram.utils.request import Request
 
@@ -175,11 +176,24 @@ class RssBot:
         logging.info(f'Posting entry: {selected_url}')
 
         # Format and send the message
-        message = f"<a href=\"{selected_url}\">{escape_html(selected_title)}</a>"
+        message = (
+            f"<b>[{self.feed_title}]</b>\n"
+            f"<a href=\"{selected_url}\">{escape_html(selected_title)}</a>"
+        )
         self.bot.send_message(
             chat_id=self.chat_id,
             text=message,
             parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "Открыть",
+                            url=selected_url,
+                        ),
+                    ],
+                ],
+            ),
         )
 
         # Mark sent entries as posted
