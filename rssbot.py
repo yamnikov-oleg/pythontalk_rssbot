@@ -77,76 +77,40 @@ class Storage:
         """
         return bool(self.get_entry_data_by_url(url))
 
-    def update_entry_likes(self, url: str, incr: bool = True) -> None:
-        key = f"{self.key_prefix}:entry_likes:{self._hash_url(url)}"
-        if incr:
-            self.rdb.incr(key)
-        else:
-            self.rdb.decr(key)
-
-    def update_entry_dislikes(self, url: str, incr: bool = True) -> None:
-        key = f"{self.key_prefix}:entry_dislikes:{self._hash_url(url)}"
-        if incr:
-            self.rdb.incr(key)
-        else:
-            self.rdb.decr(key)
-
     def get_entry_likes_dislikes(self, url: str) -> Tuple[int, int]:
-        likes_key = f"{self.key_prefix}:entry_likes:{self._hash_url(url)}"
-        likes_bytes = self.rdb.get(likes_key)
-        if likes_bytes is None:
-            likes = 0
-        else:
-            likes = int(likes_bytes.decode())
+        likes_key = f"{self.key_prefix}:entry_user_likes:{self._hash_url(url)}"
+        likes = self.rdb.scard(likes_key)
 
-        dislikes_key = f"{self.key_prefix}:entry_dislikes:{self._hash_url(url)}"
-        dislikes_bytes = self.rdb.get(dislikes_key)
-        if dislikes_bytes is None:
-            dislikes = 0
-        else:
-            dislikes = int(dislikes_bytes.decode())
+        dislikes_key = f"{self.key_prefix}:entry_user_dislikes:{self._hash_url(url)}"
+        dislikes = self.rdb.scard(dislikes_key)
 
         return likes, dislikes
 
     def toggle_entry_liked(self, url: str, user_id: Union[str, int]) -> None:
-        """
-        It's important that operations on both keys are atomic.
-        """
-        like_key = f"{self.key_prefix}:entry_user_like:{self._hash_url(url)}:{user_id}"
-        call_count = self.rdb.incr(like_key)
-        is_liked = call_count % 2 == 1
-        self.update_entry_likes(url, incr=is_liked)
+        likes_key = f"{self.key_prefix}:entry_user_likes:{self._hash_url(url)}"
+        dislikes_key = f"{self.key_prefix}:entry_user_dislikes:{self._hash_url(url)}"
 
-        dislike_key = f"{self.key_prefix}:entry_user_dislike:{self._hash_url(url)}:{user_id}"
-        old_value = self.rdb.getset(dislike_key, "0")
-        if old_value is not None:
-            old_value = int(old_value.decode())
-            was_disliked = old_value % 2 == 1
+        # It's important that operations in both cases are atomic.
+        if self.rdb.sismember(likes_key, user_id):
+            self.rdb.srem(likes_key, user_id)
         else:
-            was_disliked = False
-
-        if was_disliked:
-            self.update_entry_dislikes(url, incr=False)
+            with self.rdb.pipeline() as p:
+                p.srem(dislikes_key, user_id)
+                p.sadd(likes_key, user_id)
+                p.execute()
 
     def toggle_entry_disliked(self, url: str, user_id: Union[str, int]) -> None:
-        """
-        It's important that operations on both keys are atomic.
-        """
-        dislike_key = f"{self.key_prefix}:entry_user_dislike:{self._hash_url(url)}:{user_id}"
-        call_count = self.rdb.incr(dislike_key)
-        is_disliked = call_count % 2 == 1
-        self.update_entry_dislikes(url, incr=is_disliked)
+        likes_key = f"{self.key_prefix}:entry_user_likes:{self._hash_url(url)}"
+        dislikes_key = f"{self.key_prefix}:entry_user_dislikes:{self._hash_url(url)}"
 
-        like_key = f"{self.key_prefix}:entry_user_like:{self._hash_url(url)}:{user_id}"
-        old_value = self.rdb.getset(like_key, "0")
-        if old_value is not None:
-            old_value = int(old_value.decode())
-            was_liked = old_value % 2 == 1
+        # It's important that operations in both cases are atomic.
+        if self.rdb.sismember(dislikes_key, user_id):
+            self.rdb.srem(dislikes_key, user_id)
         else:
-            was_liked = False
-
-        if was_liked:
-            self.update_entry_likes(url, incr=False)
+            with self.rdb.pipeline() as p:
+                p.srem(likes_key, user_id)
+                p.sadd(dislikes_key, user_id)
+                p.execute()
 
     def clear_entry_data(self) -> int:
         """
