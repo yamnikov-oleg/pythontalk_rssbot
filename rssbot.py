@@ -171,6 +171,7 @@ class RssBot:
 
         self.first_update_at_hour = settings.FIRST_UPDATE_AT_HOUR
         self.update_every_hours = settings.UPDATE_EVERY_HOURS
+        self.custom_scheduler = settings.CUSTOM_SCHEDULER
 
         self.blacklist_words = settings.BLACKLIST_WORDS
         self.blacklist_urls = settings.BLACKLIST_URLS
@@ -181,12 +182,15 @@ class RssBot:
     def _setup_schedule(self):
         logging.info("Setting up RSS bot schedule")
 
-        hour = self.first_update_at_hour
-        while hour < 24:
-            time_str = f"{hour:02}:00"
-            logging.info("Bot will run at %s", time_str)
-            self.scheduler.every().day.at(time_str).do(self.update)
-            hour += self.update_every_hours
+        if self.custom_scheduler:
+            self.custom_scheduler(self.scheduler, self.update)
+        else:
+            hour = self.first_update_at_hour
+            while hour < 24:
+                time_str = f"{hour:02}:00"
+                logging.info("Bot will run at %s", time_str)
+                self.scheduler.every().day.at(time_str).do(self.update)
+                hour += self.update_every_hours
 
     def contains_blacklisted_words(self, title):
         title_lower = title.lower()
