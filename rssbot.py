@@ -241,10 +241,10 @@ class RssBot:
         logging.info(f'Posting entry: {selected_url}')
 
         # Format and send the message
-        text = (
-            f"<b>[{self.feed_title}]</b>\n"
-            f"<a href=\"{selected_url}\">{escape_html(selected_title)}</a>"
-        )
+        text = f"<a href=\"{selected_url}\">{escape_html(selected_title)}</a>"
+        if self.feed_title:
+            text = f"<b>[{self.feed_title}]</b>\n" + text
+
         message = self.bot.send_message(
             chat_id=self.chat_id,
             text=text,
